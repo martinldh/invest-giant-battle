@@ -278,7 +278,15 @@ async function fetchStockData(ticker) {
 }
 
 // ========== Configuration ==========
-const API_BASE = 'http://localhost:8000';
+const PROD_API_BASE = 'https://invest-giant-battle.onrender.com';
+const API_BASE = (() => {
+    const override = window.__API_BASE__ || document.documentElement?.dataset?.apiBase;
+    if (override) return String(override).replace(/\/+$/, '');
+
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+    return isLocal ? 'http://localhost:8000' : PROD_API_BASE;
+})();
 let useBackend = false;
 
 // ========== Backend API ==========
