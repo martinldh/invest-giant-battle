@@ -869,6 +869,18 @@ async def health_check():
     }
 
 
+@app.get("/")
+async def root():
+    """Root endpoint to avoid ambiguous 404 on service base URL."""
+    return {
+        "service": "invest-giant-battle-backend",
+        "status": "ok",
+        "message": "Backend is running. Open the frontend site for UI, or use /api/* endpoints.",
+        "frontend_hint": "https://invest-giant-frontend.onrender.com",
+        "health": "/api/health",
+    }
+
+
 # ============================================
 # Entry Point
 # ============================================
