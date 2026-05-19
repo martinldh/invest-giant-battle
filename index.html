@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大师擂台 - AI投资大师辩论助手</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+    <div class="header-inner">
+        <a class="logo" href="#">
+            <div class="logo-icon">⚔</div>
+            <div>
+                <div class="logo-text">大师擂台</div>
+                <div class="logo-sub">AI投资大师辩论助手</div>
+            </div>
+        </a>
+        <button class="header-badge" onclick="toggleSidebar()">📖 大师图鉴</button>
+    </div>
+</header>
+
+<main class="main">
+    <section class="hero">
+        <h1>让投资大师为你<span>唇枪舌剑</span></h1>
+        <p>输入一只股票或ETF代码，多位传奇投资大师将围绕它展开激烈辩论，帮你从多角度理清投资思路</p>
+    </section>
+
+    <section class="input-section">
+        <div class="input-row">
+            <div class="input-wrapper">
+                <span class="input-logo-preview" id="inputLogoPreview" aria-hidden="true"></span>
+                <input type="text" id="tickerInput" placeholder="输入公司名或代码，如 Apple、AAPL、TSLA" maxlength="40" autocomplete="off">
+                <span class="input-icon">🔍</span>
+            </div>
+            <button class="btn-debate" id="btnDebate" onclick="startDebate()">
+                <span>⚔</span><span>发起大师辩论</span>
+            </button>
+        </div>
+        <div class="input-hint" id="inputHint">
+            当前免费支持：<code>AAPL</code> <code>MSFT</code> <code>NVDA</code> <code>GOOGL</code> <code>TSLA</code> <code>QQQ</code>
+            <span id="backendStatus" style="margin-left:8px;font-size:12px;color:var(--text-muted)">· 正在检测后端服务...</span>
+        </div>
+        <div class="input-error" id="inputError"></div>
+        <div class="quick-picks">
+            <span class="quick-pick" onclick="quickPick('AAPL')">AAPL</span>
+            <span class="quick-pick" onclick="quickPick('MSFT')">MSFT</span>
+            <span class="quick-pick" onclick="quickPick('NVDA')">NVDA</span>
+            <span class="quick-pick" onclick="quickPick('GOOGL')">GOOGL</span>
+            <span class="quick-pick" onclick="quickPick('TSLA')">TSLA</span>
+            <span class="quick-pick" onclick="quickPick('QQQ')">QQQ</span>
+        </div>
+    </section>
+
+    <section class="loading-section" id="loadingSection">
+        <div class="loading-avatars" id="loadingAvatars"></div>
+        <div class="loading-text" id="loadingText">大师们正在激烈辩论中<span class="loading-dots"></span></div>
+    </section>
+
+    <section class="stock-info-bar" id="stockInfoBar">
+        <div id="stockInfoContent"></div>
+    </section>
+
+    <section class="debate-section" id="debateSection">
+        <div class="debate-header">
+            <div class="debate-title">⚔ 大师辩论现场</div>
+        </div>
+        <div class="debate-columns">
+            <div class="debate-column bullish-col" id="colBullish">
+                <div class="column-header">
+                    <div class="column-header-icon">📈</div>
+                    <div class="column-header-label">看多方</div>
+                    <div class="column-header-count" id="countBullish"></div>
+                </div>
+                <div id="cardsBullish"></div>
+            </div>
+            <div class="debate-column bearish-col" id="colBearish">
+                <div class="column-header">
+                    <div class="column-header-icon">📉</div>
+                    <div class="column-header-label">看空方</div>
+                    <div class="column-header-count" id="countBearish"></div>
+                </div>
+                <div id="cardsBearish"></div>
+            </div>
+            <div class="debate-column neutral-col" id="colNeutral">
+                <div class="column-header">
+                    <div class="column-header-icon">⏸</div>
+                    <div class="column-header-label">持有方</div>
+                    <div class="column-header-count" id="countNeutral"></div>
+                </div>
+                <div id="cardsNeutral"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="summary-section" id="summarySection">
+        <div class="summary-title">🎯 大师辩论总结（仅供参考）</div>
+        <div id="overallVerdict"></div>
+        <div class="stance-stats" id="stanceStats"></div>
+        <div class="summary-block">
+            <div class="summary-block-title">💡 核心共识</div>
+            <div class="summary-block-content" id="summaryConsensus"></div>
+        </div>
+        <div class="summary-block">
+            <div class="summary-block-title">📋 参考决策</div>
+            <div class="summary-block-content" id="summaryDecision"></div>
+        </div>
+        <div class="risk-warning">
+            <span class="warn-icon">⚠️</span>
+            <span>大师们吵得很凶，但最终还是要你自己拿主意哦！本辩论仅为思路参考，不构成任何投资建议。投资有风险，入市需谨慎～</span>
+        </div>
+    </section>
+
+    <div class="reset-section" id="resetSection">
+        <button class="btn-reset" onclick="resetAll()">🔄 重新输入标的</button>
+    </div>
+</main>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-title">📖 大师图鉴</div>
+        <button class="sidebar-close" onclick="toggleSidebar()">✕</button>
+    </div>
+    <div id="masterList"></div>
+</div>
+
+<footer class="footer">
+    本工具仅用于学习和思路参考，不构成任何投资建议，请勿依据此结论进行实际操盘。<br>
+    底层框架参考 <a href="https://github.com/virattt/ai-hedge-fund" target="_blank">virattt/ai-hedge-fund</a> 开源项目 · 股价数据来源 <a href="https://twelvedata.com/" target="_blank">Twelve Data</a> · 投资有风险，入市需谨慎
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

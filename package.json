@@ -1,0 +1,16 @@
+{
+  "name": "invest-giant-battle",
+  "version": "1.0.0",
+  "description": "基于 [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) 开源项目构建的前端应用，让12位传奇投资大师围绕任意股票展开实时AI辩论。",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}
