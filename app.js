@@ -183,16 +183,8 @@ function updateInputLogoPreview() {
     const input = document.getElementById('tickerInput');
     const wrapper = input.closest('.input-wrapper');
     const preview = document.getElementById('inputLogoPreview');
-    const company = findCompanySuggestion(input.value);
-
-    if (!company) {
-        wrapper.classList.remove('has-logo');
-        preview.innerHTML = '';
-        return;
-    }
-
-    wrapper.classList.add('has-logo');
-    preview.innerHTML = `<img src="${company.logo}" alt="" onerror="this.parentElement.innerHTML=''; this.closest('.input-wrapper').classList.remove('has-logo');">`;
+    wrapper.classList.remove('has-logo');
+    preview.innerHTML = '';
 }
 function showInputError(msg) {
     const el = document.getElementById('inputError');
@@ -201,6 +193,45 @@ function showInputError(msg) {
     setTimeout(() => el.classList.remove('show'), 3000);
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function resolveLogoCandidates(data) {
+    const ticker = (data?.ticker || '').toUpperCase();
+    const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
+    const fallbackDomainByTicker = {
+        AAPL: 'apple.com',
+        MSFT: 'microsoft.com',
+        NVDA: 'nvidia.com',
+        GOOGL: 'abc.xyz',
+        GOOG: 'abc.xyz',
+        TSLA: 'tesla.com',
+        QQQ: 'invesco.com',
+        AMZN: 'amazon.com',
+        META: 'meta.com',
+        AMD: 'amd.com',
+        NFLX: 'netflix.com',
+    };
+    const domain = fallbackDomainByTicker[ticker];
+    return [data?.logo, company?.logo, domain ? `https://logo.clearbit.com/${domain}` : null].filter(Boolean);
+}
+
+function buildStockLogoImg(data) {
+    const candidates = resolveLogoCandidates(data);
+    if (!candidates.length) return '';
+
+    const encoded = JSON.stringify(candidates).replace(/"/g, '&quot;');
+    return `<img class="stock-logo" src="${candidates[0]}" alt="${data.ticker}" data-logo-candidates="${encoded}" data-logo-index="0" onerror="
+        try {
+            const list = JSON.parse(this.dataset.logoCandidates || '[]');
+            const next = Number(this.dataset.logoIndex || '0') + 1;
+            if (next < list.length) {
+                this.dataset.logoIndex = String(next);
+                this.src = list[next];
+                return;
+            }
+        } catch (e) {}
+        this.style.display='none';
+    ">`;
+}
 
 // ========== Stock Data via Backend API ==========
 async function fetchStockData(ticker) {
@@ -225,7 +256,7 @@ async function fetchStockData(ticker) {
         content.innerHTML = `
             <div class="stock-info-top">
                 <div class="stock-info-left">
-                    ${data.logo ? `<img class="stock-logo" src="${data.logo}" alt="${data.ticker}" onerror="this.onerror=null; this.src='https://logo.clearbit.com/${data.name ? data.name.split(' ')[0].toLowerCase() : data.ticker.toLowerCase()}.com'; this.onerror=function(){this.style.display='none';}">` : ''}
+                    ${buildStockLogoImg(data)}
                     <div>
                         <span class="stock-ticker">${data.ticker}</span>
                         <span class="stock-name">${data.name || ''}</span>
@@ -459,7 +490,7 @@ function renderStockInfoFromBackend(data) {
     content.innerHTML = `
         <div class="stock-info-top">
             <div class="stock-info-left">
-                ${data.logo ? `<img class="stock-logo" src="${data.logo}" alt="${data.ticker}" onerror="this.onerror=null; this.src='https://logo.clearbit.com/${data.name ? data.name.split(' ')[0].toLowerCase() : data.ticker.toLowerCase()}.com'; this.onerror=function(){this.style.display='none';}">` : ''}
+                ${buildStockLogoImg(data)}
                 <div>
                     <span class="stock-ticker">${data.ticker}</span>
                     <span class="stock-name">${data.name || ''}</span>
