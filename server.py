@@ -59,8 +59,9 @@ ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 
 # LLM retry configuration
-LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
 LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "1.0"))
+MASTER_OPINION_TIMEOUT_SECONDS = float(os.getenv("MASTER_OPINION_TIMEOUT_SECONDS", "35"))
 
 # Stock cache configuration
 STOCK_CACHE_TTL_SECONDS = int(os.getenv("STOCK_CACHE_TTL_SECONDS", "300"))
@@ -463,7 +464,7 @@ async def call_llm_stream(system_prompt: str, user_prompt: str):
             client = AsyncOpenAI(
                 api_key=OPENAI_API_KEY,
                 base_url=OPENAI_BASE_URL,
-                timeout=30.0,
+                timeout=20.0,
             )
 
             stream = await client.chat.completions.create(
@@ -473,7 +474,7 @@ async def call_llm_stream(system_prompt: str, user_prompt: str):
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.6,
-                max_tokens=260,
+                max_tokens=220,
                 stream=True,
             )
 
@@ -590,7 +591,23 @@ async def start_debate(request: DebateRequest):
         
         async def limited_generate(master, prompt):
             async with semaphore:
-                return await generate_master_opinion(master, prompt)
+                try:
+                    return await asyncio.wait_for(
+                        generate_master_opinion(master, prompt),
+                        timeout=MASTER_OPINION_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    return {
+                        "type": "master_opinion",
+                        "master_id": master["id"],
+                        "master_name": master["name"],
+                        "school": master["school"],
+                        "school_label": master["school_label"],
+                        "stance": "neutral",
+                        "opinion": build_safe_opinion_html("本轮生成超时，先给出中性观察观点：建议关注最新财报和估值变化后再决策。"),
+                        "rebuttal": None,
+                        "error": True,
+                    }
 
         streamed_count = 0
         total = len(MASTERS)
