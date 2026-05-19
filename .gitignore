@@ -38,6 +38,7 @@ Thumbs.db
 
 # QA screenshots
 qa-*.jpg
+qa_*.js
 
 # Logs
 *.log
