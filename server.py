@@ -668,19 +668,88 @@ def parse_llm_payload(text: str) -> dict:
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                payload = json.loads(cleaned[start:end + 1])
-            except json.JSONDecodeError:
-                payload = {"stance": None, "opinion": cleaned, "rebuttal_target": "", "rebuttal": ""}
-        else:
+        payload = _extract_first_json_object(cleaned)
+        if payload is None:
             payload = {"stance": None, "opinion": cleaned, "rebuttal_target": "", "rebuttal": ""}
 
     if not isinstance(payload, dict):
         return {"stance": None, "opinion": cleaned, "rebuttal_target": "", "rebuttal": ""}
-    return payload
+    return _normalize_payload(payload, cleaned)
+
+
+def _extract_first_json_object(text: str):
+    """Try to parse the first valid JSON object found in text."""
+    if "{" not in text:
+        return None
+
+    length = len(text)
+    for start in range(length):
+        if text[start] != "{":
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for end in range(start, length):
+            ch = text[end]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+
+            if ch == '"':
+                in_string = True
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:end + 1]
+                    try:
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            return obj
+                    except json.JSONDecodeError:
+                        pass
+                    break
+    return None
+
+
+def _normalize_payload(payload: dict, fallback_text: str) -> dict:
+    """Coerce model payload into expected shape and avoid raw JSON leaks."""
+    out = {
+        "stance": payload.get("stance"),
+        "opinion": payload.get("opinion"),
+        "rebuttal_target": payload.get("rebuttal_target"),
+        "rebuttal": payload.get("rebuttal"),
+    }
+
+    if not isinstance(out["opinion"], str) or not out["opinion"].strip():
+        out["opinion"] = fallback_text
+    if not isinstance(out["rebuttal_target"], str):
+        out["rebuttal_target"] = ""
+    if not isinstance(out["rebuttal"], str):
+        out["rebuttal"] = ""
+
+    # Some models return a JSON string inside "opinion". Try one more parse.
+    opinion_candidate = out["opinion"].strip()
+    if opinion_candidate.startswith("{") and opinion_candidate.endswith("}"):
+        nested = _extract_first_json_object(opinion_candidate)
+        if isinstance(nested, dict):
+            nested_opinion = nested.get("opinion")
+            if isinstance(nested_opinion, str) and nested_opinion.strip():
+                out["opinion"] = nested_opinion
+            nested_target = nested.get("rebuttal_target")
+            if isinstance(nested_target, str) and nested_target.strip() and not out["rebuttal_target"]:
+                out["rebuttal_target"] = nested_target
+            nested_rebuttal = nested.get("rebuttal")
+            if isinstance(nested_rebuttal, str) and nested_rebuttal.strip() and not out["rebuttal"]:
+                out["rebuttal"] = nested_rebuttal
+    return out
 
 
 def normalize_stance(stance, fallback_text: str = "") -> str:

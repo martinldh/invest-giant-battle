@@ -129,7 +129,7 @@ const COMPANY_DIRECTORY = [
 
 // ========== Functions ==========
 function quickPick(ticker) {
-    document.getElementById('tickerInput').value = ticker;
+    document.getElementById('tickerInput').value = String(ticker || '').trimStart();
     updateInputLogoPreview();
     document.getElementById('tickerInput').focus();
 }
@@ -181,6 +181,7 @@ function findCompanySuggestion(value) {
 }
 function updateInputLogoPreview() {
     const input = document.getElementById('tickerInput');
+    input.value = input.value.replace(/^\s+/, '');
     const wrapper = input.closest('.input-wrapper');
     const preview = document.getElementById('inputLogoPreview');
     wrapper.classList.remove('has-logo');
@@ -211,7 +212,15 @@ function resolveLogoCandidates(data) {
         NFLX: 'netflix.com',
     };
     const domain = fallbackDomainByTicker[ticker];
-    return [data?.logo, company?.logo, domain ? `https://logo.clearbit.com/${domain}` : null].filter(Boolean);
+    const extraByTicker = {
+        AAPL: 'https://cdn.simpleicons.org/apple/000000',
+    };
+    return [
+        data?.logo,
+        company?.logo,
+        domain ? `https://logo.clearbit.com/${domain}` : null,
+        extraByTicker[ticker] || null,
+    ].filter(Boolean);
 }
 
 function buildStockLogoImg(data) {
@@ -229,7 +238,9 @@ function buildStockLogoImg(data) {
                 return;
             }
         } catch (e) {}
-        this.style.display='none';
+        this.onerror=null;
+        this.src='https://cdn.simpleicons.org/${(data.ticker || 'chart').toLowerCase()}/000000';
+        this.onerror=function(){ this.src='https://cdn.simpleicons.org/chartdotjs/000000'; };
     ">`;
 }
 
@@ -346,8 +357,9 @@ async function startDebate() {
         showInputError('大师配置尚未加载完成，请稍后重试');
         return;
     }
-    const input = document.getElementById('tickerInput').value;
-    const validation = validateInput(input);
+    const inputEl = document.getElementById('tickerInput');
+    inputEl.value = inputEl.value.replace(/^\s+/, '');
+    const validation = validateInput(inputEl.value);
     if (!validation.valid) { showInputError(validation.msg); return; }
     const ticker = validation.ticker;
 
