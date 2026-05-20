@@ -14,6 +14,7 @@ import html
 import re
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
@@ -67,6 +68,17 @@ LLM_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY", "1.0"))
 STOCK_CACHE_TTL_SECONDS = int(os.getenv("STOCK_CACHE_TTL_SECONDS", "300"))
 STOCK_CACHE: dict[str, tuple[float, dict]] = {}
 
+# Debate cache configuration (post-close daily cache for selected symbols)
+DEBATE_CACHE_PATH = Path(__file__).with_name("debate_cache.json")
+DEBATE_CACHE_SYMBOLS = {
+    "AAPL", "MSFT", "NVDA", "GOOGL", "TSLA", "AMZN",
+    "ACWI", "FTEC", "QQQ", "UVXY",
+}
+MARKET_TZ = ZoneInfo("America/New_York")
+MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "16"))
+MARKET_CLOSE_MINUTE = int(os.getenv("MARKET_CLOSE_MINUTE", "10"))
+DEBATE_CACHE_LOCK = asyncio.Lock()
+
 # ============================================
 # Master Agent Definitions
 # ============================================
@@ -87,6 +99,69 @@ def load_masters() -> list[dict]:
 
 
 MASTERS = load_masters()
+
+
+def load_debate_cache() -> dict:
+    """Load persisted debate cache from disk."""
+    if not DEBATE_CACHE_PATH.exists():
+        return {}
+    try:
+        with DEBATE_CACHE_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning(f"Failed to load debate cache: {e}")
+        return {}
+
+
+DEBATE_CACHE = load_debate_cache()
+
+
+def save_debate_cache() -> None:
+    """Persist debate cache to disk."""
+    try:
+        with DEBATE_CACHE_PATH.open("w", encoding="utf-8") as f:
+            json.dump(DEBATE_CACHE, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save debate cache: {e}")
+
+
+def is_post_close_market_snapshot(stock_data: dict) -> bool:
+    """
+    Decide whether the current market snapshot is at/after close in US market time.
+    - If data date is before NY today, it's a closed day snapshot.
+    - If data date is NY today, only cache after MARKET_CLOSE_HOUR:MARKET_CLOSE_MINUTE.
+    """
+    last_updated = str(stock_data.get("last_updated", "")).strip()
+    if not last_updated:
+        return False
+    try:
+        data_date = datetime.strptime(last_updated, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+
+    now_ny = datetime.now(MARKET_TZ)
+    today_ny = now_ny.date()
+    if data_date < today_ny:
+        return True
+    if data_date > today_ny:
+        return False
+
+    close_reached = (now_ny.hour, now_ny.minute) >= (MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE)
+    return close_reached
+
+
+def build_debate_cache_key(ticker: str, stock_data: dict) -> str | None:
+    """Build per-symbol, per-trading-day cache key for debate output."""
+    symbol = ticker.strip().upper()
+    if symbol not in DEBATE_CACHE_SYMBOLS:
+        return None
+    trade_day = str(stock_data.get("last_updated", "")).strip()
+    if not trade_day:
+        return None
+    if not is_post_close_market_snapshot(stock_data):
+        return None
+    return f"{symbol}:{trade_day}"
 
 
 # ============================================
@@ -581,6 +656,22 @@ async def start_debate(request: DebateRequest):
         error_msg = json.dumps({"type": "error", "message": f"获取股价数据失败: {str(e)}"}, ensure_ascii=False)
         return StreamingResponse(iter([error_msg]), media_type="text/event-stream")
 
+    cache_key = build_debate_cache_key(ticker, stock_data)
+    if cache_key:
+        cached = DEBATE_CACHE.get(cache_key)
+        if isinstance(cached, dict):
+            cached_entries = cached.get("entries", [])
+            if isinstance(cached_entries, list) and cached_entries:
+                async def cached_stream():
+                    yield json.dumps({"type": "stock_data", "data": stock_data}, ensure_ascii=False) + "\n"
+                    yield json.dumps({"type": "generating", "message": "已命中收盘缓存，正在快速加载大师观点..."}, ensure_ascii=False) + "\n"
+                    total = len(cached_entries)
+                    for idx, entry in enumerate(cached_entries, start=1):
+                        yield json.dumps({"type": "progress", "generated": idx, "total": total}, ensure_ascii=False) + "\n"
+                        yield json.dumps(entry, ensure_ascii=False) + "\n"
+                    yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+                return StreamingResponse(cached_stream(), media_type="text/event-stream")
+
     async def event_stream():
         yield json.dumps({"type": "stock_data", "data": stock_data}, ensure_ascii=False) + "\n"
         yield json.dumps({"type": "generating", "message": "正在生成 12 位大师观点..."}, ensure_ascii=False) + "\n"
@@ -595,6 +686,7 @@ async def start_debate(request: DebateRequest):
 
         streamed_count = 0
         total = len(MASTERS)
+        generated_entries = []
 
         # Create tasks for all masters with concurrency limit
         all_tasks = []
@@ -612,8 +704,29 @@ async def start_debate(request: DebateRequest):
 
             # Stream each completed opinion immediately for real-time UX.
             yield json.dumps(result, ensure_ascii=False) + "\n"
+            generated_entries.append(result)
 
         yield json.dumps({"type": "done"}, ensure_ascii=False) + "\n"
+
+        if cache_key and generated_entries:
+            async with DEBATE_CACHE_LOCK:
+                DEBATE_CACHE[cache_key] = {
+                    "ticker": ticker,
+                    "trade_day": str(stock_data.get("last_updated", "")),
+                    "created_at": datetime.now(MARKET_TZ).isoformat(),
+                    "entries": generated_entries,
+                }
+                # Keep cache bounded for simplicity.
+                if len(DEBATE_CACHE) > 120:
+                    ordered = sorted(
+                        DEBATE_CACHE.items(),
+                        key=lambda kv: kv[1].get("created_at", ""),
+                        reverse=True,
+                    )
+                    trimmed = dict(ordered[:120])
+                    DEBATE_CACHE.clear()
+                    DEBATE_CACHE.update(trimmed)
+                save_debate_cache()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -942,7 +1055,15 @@ async def health_check():
         "model": LLM_MODEL,
         "stock_provider": STOCK_DATA_PROVIDER,
         "cors_origins": CORS_ORIGINS,
+        "debate_cache_keys": len(DEBATE_CACHE),
     }
+
+
+@app.get("/api/debate-cache")
+async def get_debate_cache_status():
+    """Inspect current debate cache keys."""
+    keys = sorted(DEBATE_CACHE.keys())
+    return {"count": len(keys), "keys": keys[:200]}
 
 
 @app.get("/")
