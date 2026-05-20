@@ -195,6 +195,45 @@ function showInputError(msg) {
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+function parseLooseJsonObject(text) {
+    if (typeof text !== 'string') return null;
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+    try {
+        return JSON.parse(trimmed);
+    } catch (_) {
+        try {
+            const normalized = trimmed
+                .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":')
+                .replace(/:\s*'([^']*)'/g, ': "$1"')
+                .replace(/\n/g, '\\n');
+            return JSON.parse(normalized);
+        } catch (_) {
+            return null;
+        }
+    }
+}
+
+function normalizeBackendEntry(entry) {
+    const next = { ...entry };
+    const parsed = parseLooseJsonObject(next.opinion);
+    if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.opinion === 'string' && parsed.opinion.trim()) {
+            next.opinion = parsed.opinion;
+        }
+        if (!next.rebuttal && typeof parsed.rebuttal === 'string' && parsed.rebuttal.trim()) {
+            next.rebuttal = {
+                target: typeof parsed.rebuttal_target === 'string' ? parsed.rebuttal_target : '',
+                text: parsed.rebuttal,
+            };
+        }
+        if (typeof parsed.stance === 'string' && ['bullish', 'bearish', 'neutral'].includes(parsed.stance.toLowerCase())) {
+            next.stance = parsed.stance.toLowerCase();
+        }
+    }
+    return next;
+}
+
 function resolveLogoCandidates(data) {
     const ticker = (data?.ticker || '').toUpperCase();
     const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
@@ -458,7 +497,7 @@ async function startDebateWithBackend(ticker) {
                         loadingHidden = true;
                     }
 
-                    const entry = {
+                    const entryRaw = {
                         master_id: event.master_id,
                         master_name: event.master_name,
                         school: event.school,
@@ -468,6 +507,7 @@ async function startDebateWithBackend(ticker) {
                         rebuttal: event.rebuttal,
                         error: event.error,
                     };
+                    const entry = normalizeBackendEntry(entryRaw);
                     allEntries.push(entry);
 
                     updateColumnCounts(allEntries);

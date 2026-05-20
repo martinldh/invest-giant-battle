@@ -5,6 +5,7 @@
 
 import os
 import json
+import ast
 import asyncio
 import httpx
 import logging
@@ -714,7 +715,13 @@ def _extract_first_json_object(text: str):
                         if isinstance(obj, dict):
                             return obj
                     except json.JSONDecodeError:
-                        pass
+                        # Some models return Python-dict-like strings with single quotes.
+                        try:
+                            obj = ast.literal_eval(candidate)
+                            if isinstance(obj, dict):
+                                return obj
+                        except Exception:
+                            pass
                     break
     return None
 
