@@ -309,6 +309,18 @@ function sanitizeDisplayLayerEntry(entry) {
     return next;
 }
 
+function zeroToleranceStripJsonEnvelope(text, preferredKey = 'opinion') {
+    if (typeof text !== 'string') return '';
+    const raw = text.trim();
+    const looksLikeEnvelope = /^\s*\{[\s\S]*["'](stance|opinion|rebuttal_target|rebuttal)["']\s*:/.test(raw);
+    if (!looksLikeEnvelope) return text;
+
+    const extracted = extractFieldByKeyHeuristic(raw, preferredKey, ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(raw, 'opinion', ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(raw, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
+    return extracted || '观点生成中，请稍后刷新本条结果。';
+}
+
 function resolveLogoCandidates(data) {
     const ticker = (data?.ticker || '').toUpperCase();
     const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
@@ -684,9 +696,13 @@ async function streamMasterCardFromBackend(entry, index) {
     card.classList.add('visible');
 
     const opinionEl = document.getElementById(`opinion-api-${index}`);
-    await streamText(opinionEl, entry.opinion, 12);
+    const safeOpinionText = zeroToleranceStripJsonEnvelope(entry.opinion, 'opinion');
+    await streamText(opinionEl, safeOpinionText, 12);
 
     if (entry.rebuttal) {
+        if (entry.rebuttal.text) {
+            entry.rebuttal.text = zeroToleranceStripJsonEnvelope(entry.rebuttal.text, 'rebuttal');
+        }
         document.getElementById(`rebuttal-api-${index}`).classList.add('show');
     }
 }
@@ -817,6 +833,9 @@ async function streamMasterCard(entry, col, index) {
 }
 
 async function streamText(element, html, speed) {
+    if (typeof html === 'string') {
+        html = zeroToleranceStripJsonEnvelope(html, 'opinion');
+    }
     // Convert markdown bold (**text**) to HTML <strong>text</strong>
     // Convert newlines to <br> tags
     let processedHtml = html
