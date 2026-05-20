@@ -188,6 +188,19 @@ body {
 .stock-info-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .stock-info-left { display: flex; align-items: center; gap: 12px; }
 .stock-logo { width: 36px; height: 36px; object-fit: contain; border-radius: 8px; }
+.stock-logo-fallback {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: #EEF1F7;
+    border: 1px solid var(--border-light);
+}
 .stock-ticker { font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
 .stock-name { font-size: 14px; color: var(--text-muted); }
 .stock-price-big { font-size: 32px; font-weight: 800; }

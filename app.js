@@ -181,7 +181,7 @@ function findCompanySuggestion(value) {
 }
 function updateInputLogoPreview() {
     const input = document.getElementById('tickerInput');
-    input.value = input.value.replace(/^\s+/, '');
+    normalizeTickerInputValue(input);
     const wrapper = input.closest('.input-wrapper');
     const preview = document.getElementById('inputLogoPreview');
     wrapper.classList.remove('has-logo');
@@ -228,7 +228,7 @@ function buildStockLogoImg(data) {
     if (!candidates.length) return '';
 
     const encoded = JSON.stringify(candidates).replace(/"/g, '&quot;');
-    return `<img class="stock-logo" src="${candidates[0]}" alt="${data.ticker}" data-logo-candidates="${encoded}" data-logo-index="0" onerror="
+    return `<img class="stock-logo" src="${candidates[0]}" alt="${data.ticker}" data-ticker="${data.ticker || ''}" data-logo-candidates="${encoded}" data-logo-index="0" onerror="
         try {
             const list = JSON.parse(this.dataset.logoCandidates || '[]');
             const next = Number(this.dataset.logoIndex || '0') + 1;
@@ -238,10 +238,15 @@ function buildStockLogoImg(data) {
                 return;
             }
         } catch (e) {}
-        this.onerror=null;
-        this.src='https://cdn.simpleicons.org/${(data.ticker || 'chart').toLowerCase()}/000000';
-        this.onerror=function(){ this.src='https://cdn.simpleicons.org/chartdotjs/000000'; };
+        const ticker = (this.dataset.ticker || '?').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0,4) || '?';
+        this.outerHTML = '<span class=&quot;stock-logo-fallback&quot; aria-label=&quot;' + ticker + ' logo fallback&quot;>' + ticker[0] + '</span>';
     ">`;
+}
+
+function normalizeTickerInputValue(inputEl) {
+    if (!inputEl) return;
+    const cleaned = String(inputEl.value || '').replace(/^\s+/, '');
+    if (cleaned !== inputEl.value) inputEl.value = cleaned;
 }
 
 // ========== Stock Data via Backend API ==========
@@ -358,7 +363,7 @@ async function startDebate() {
         return;
     }
     const inputEl = document.getElementById('tickerInput');
-    inputEl.value = inputEl.value.replace(/^\s+/, '');
+    normalizeTickerInputValue(inputEl);
     const validation = validateInput(inputEl.value);
     if (!validation.valid) { showInputError(validation.msg); return; }
     const ticker = validation.ticker;
@@ -794,8 +799,12 @@ function resetAll() {
 }
 
 async function initApp() {
-    document.getElementById('tickerInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') startDebate(); });
-    document.getElementById('tickerInput').addEventListener('input', updateInputLogoPreview);
+    const tickerInput = document.getElementById('tickerInput');
+    tickerInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') startDebate(); });
+    tickerInput.addEventListener('input', updateInputLogoPreview);
+    tickerInput.addEventListener('change', () => normalizeTickerInputValue(tickerInput));
+    tickerInput.addEventListener('blur', () => normalizeTickerInputValue(tickerInput));
+    tickerInput.addEventListener('paste', () => setTimeout(() => normalizeTickerInputValue(tickerInput), 0));
     await loadMasters();
     renderMasterList();
     await checkBackend();
