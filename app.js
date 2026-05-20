@@ -234,6 +234,33 @@ function normalizeBackendEntry(entry) {
     return next;
 }
 
+function extractDisplayTextFromJsonLike(rawText, preferredKey) {
+    if (typeof rawText !== 'string') return rawText;
+    const parsed = parseLooseJsonObject(rawText);
+    if (!parsed || typeof parsed !== 'object') return rawText;
+
+    const preferred = parsed[preferredKey];
+    if (typeof preferred === 'string' && preferred.trim()) return preferred;
+
+    for (const key of ['opinion', 'rebuttal', 'text', 'message']) {
+        const value = parsed[key];
+        if (typeof value === 'string' && value.trim()) return value;
+    }
+    return rawText;
+}
+
+function sanitizeDisplayLayerEntry(entry) {
+    const next = { ...entry };
+    next.opinion = extractDisplayTextFromJsonLike(next.opinion, 'opinion');
+    if (next.rebuttal && typeof next.rebuttal === 'object') {
+        next.rebuttal = {
+            ...next.rebuttal,
+            text: extractDisplayTextFromJsonLike(next.rebuttal.text, 'rebuttal'),
+        };
+    }
+    return next;
+}
+
 function resolveLogoCandidates(data) {
     const ticker = (data?.ticker || '').toUpperCase();
     const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
@@ -507,7 +534,7 @@ async function startDebateWithBackend(ticker) {
                         rebuttal: event.rebuttal,
                         error: event.error,
                     };
-                    const entry = normalizeBackendEntry(entryRaw);
+                    const entry = sanitizeDisplayLayerEntry(normalizeBackendEntry(entryRaw));
                     allEntries.push(entry);
 
                     updateColumnCounts(allEntries);
