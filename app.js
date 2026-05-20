@@ -125,6 +125,8 @@ const COMPANY_DIRECTORY = [
     { ticker: 'META', name: 'Meta', aliases: ['meta', 'facebook', 'meta platforms'], logo: 'https://logo.clearbit.com/meta.com' },
     { ticker: 'AMD', name: 'AMD', aliases: ['amd', 'advanced micro devices'], logo: 'https://logo.clearbit.com/amd.com' },
     { ticker: 'NFLX', name: 'Netflix', aliases: ['netflix', '奈飞'], logo: 'https://logo.clearbit.com/netflix.com' },
+    { ticker: '0700:HKEX', name: 'Tencent', aliases: ['0700', '0700.hk', '0700:hkex', 'tencent', '腾讯'], logo: 'https://logo.clearbit.com/tencent.com' },
+    { ticker: '9988:HKEX', name: 'Alibaba', aliases: ['9988', '9988.hk', '9988:hkex', 'alibaba hk', '阿里巴巴'], logo: 'https://logo.clearbit.com/alibabagroup.com' },
 ];
 
 // ========== Functions ==========
@@ -156,8 +158,10 @@ function validateInput(ticker) {
     if (company) return { valid: true, ticker: company.ticker };
 
     const normalizedTicker = raw.toUpperCase();
-    if (!/^[A-Z0-9.]+$/.test(normalizedTicker)) return { valid: false, msg: '未识别该公司，请输入股票代码或常见公司名' };
-    if (normalizedTicker.length > 10) return { valid: false, msg: '标的代码长度不能超过10个字符' };
+    if (/^\d{4,5}$/.test(normalizedTicker)) return { valid: true, ticker: `${normalizedTicker}:HKEX` };
+    if (/^\d{4,5}\.HK$/.test(normalizedTicker)) return { valid: true, ticker: normalizedTicker.replace('.HK', ':HKEX') };
+    if (!/^[A-Z0-9.:-]+$/.test(normalizedTicker)) return { valid: false, msg: '未识别该公司，请输入股票代码或常见公司名' };
+    if (normalizedTicker.length > 20) return { valid: false, msg: '标的代码长度不能超过20个字符' };
     return { valid: true, ticker: normalizedTicker };
 }
 function normalizeCompanyQuery(value) {
@@ -323,6 +327,7 @@ function zeroToleranceStripJsonEnvelope(text, preferredKey = 'opinion') {
 
 function resolveLogoCandidates(data) {
     const ticker = (data?.ticker || '').toUpperCase();
+    const tickerBase = ticker.split(':')[0];
     const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
     const fallbackDomainByTicker = {
         AAPL: 'apple.com',
@@ -337,7 +342,7 @@ function resolveLogoCandidates(data) {
         AMD: 'amd.com',
         NFLX: 'netflix.com',
     };
-    const domain = fallbackDomainByTicker[ticker];
+    const domain = fallbackDomainByTicker[ticker] || fallbackDomainByTicker[tickerBase];
     const extraByTicker = {
         AAPL: 'https://cdn.simpleicons.org/apple/000000',
     };
@@ -345,7 +350,7 @@ function resolveLogoCandidates(data) {
         data?.logo,
         company?.logo,
         domain ? `https://logo.clearbit.com/${domain}` : null,
-        extraByTicker[ticker] || null,
+        extraByTicker[ticker] || extraByTicker[tickerBase] || null,
     ].filter(Boolean);
 }
 

@@ -628,7 +628,15 @@ class DebateRequest(BaseModel):
 def normalize_ticker(ticker: str) -> str:
     """Validate and normalize public ticker input."""
     normalized = ticker.strip().upper()
-    if not re.fullmatch(r"[A-Z0-9.]{1,10}", normalized):
+
+    # Hong Kong stocks: allow shorthand like 0700 / 0700.HK
+    if re.fullmatch(r"\d{4,5}", normalized):
+        normalized = f"{normalized}:HKEX"
+    elif re.fullmatch(r"\d{4,5}\.HK", normalized):
+        normalized = normalized.replace(".HK", ":HKEX")
+
+    # Allow exchange-qualified symbols (e.g., 0700:HKEX, 0005:XHKG)
+    if not re.fullmatch(r"[A-Z0-9.:-]{1,20}", normalized):
         raise HTTPException(status_code=400, detail="标的代码格式不正确")
     return normalized
 
