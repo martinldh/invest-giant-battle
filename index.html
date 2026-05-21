@@ -113,6 +113,15 @@
     </section>
 
     <div class="reset-section" id="resetSection">
+        <select class="share-select" id="shareTemplateSelect" aria-label="分享模板">
+            <option value="full">完整版（含全部观点）</option>
+            <option value="lite">简版（适合快速传播）</option>
+        </select>
+        <select class="share-select" id="shareRatioSelect" aria-label="分享尺寸">
+            <option value="long">长图（原始比例）</option>
+            <option value="social">朋友圈 4:5</option>
+        </select>
+        <button class="btn-share" id="btnShareImage" onclick="exportDebateAsPng()">🖼 保存分享长图（PNG）</button>
         <button class="btn-reset" onclick="resetAll()">🔄 重新输入标的</button>
     </div>
 </main>
@@ -131,6 +140,7 @@
     底层框架参考 <a href="https://github.com/virattt/ai-hedge-fund" target="_blank">virattt/ai-hedge-fund</a> 开源项目 · 股价数据来源 <a href="https://twelvedata.com/" target="_blank">Twelve Data</a> · 投资有风险，入市需谨慎
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1093,6 +1093,159 @@ function resetAll() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function buildShareFileName() {
+    const ticker = (currentDebateTicker || 'TICKER').replace(/[^A-Za-z0-9:_-]/g, '_');
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    return `invest-giant-battle_${ticker}_${stamp}.png`;
+}
+
+function createShareQrDataUrl(text) {
+    const size = 120;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = '#D0D4E4';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, size - 2, size - 2);
+    ctx.fillStyle = '#1A1D2E';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('扫码查看', size / 2, 22);
+    ctx.font = '10px monospace';
+    const short = String(text || '').slice(0, 14).toUpperCase();
+    ctx.fillText(short || 'TICKER', size / 2, size / 2 + 8);
+    return c.toDataURL('image/png');
+}
+
+async function exportDebateAsPng() {
+    const shareBtn = document.getElementById('btnShareImage');
+    if (!shareBtn) return;
+
+    const stockInfoBar = document.getElementById('stockInfoBar');
+    const debateSection = document.getElementById('debateSection');
+    const summarySection = document.getElementById('summarySection');
+    const templateSelect = document.getElementById('shareTemplateSelect');
+    const ratioSelect = document.getElementById('shareRatioSelect');
+    const template = templateSelect?.value || 'full';
+    const ratio = ratioSelect?.value || 'long';
+
+    if (!stockInfoBar?.classList.contains('show') || !debateSection?.classList.contains('show')) {
+        showInputError('请先生成一只股票的辩论结果，再导出分享长图。');
+        return;
+    }
+
+    const exportWrap = document.createElement('div');
+    exportWrap.style.position = 'fixed';
+    exportWrap.style.left = '-100000px';
+    exportWrap.style.top = '0';
+    exportWrap.style.width = ratio === 'social' ? '1080px' : '1200px';
+    exportWrap.style.padding = '24px';
+    exportWrap.style.background = '#F7F8FC';
+    exportWrap.style.zIndex = '-1';
+
+    const title = document.createElement('div');
+    title.style.background = '#FFFFFF';
+    title.style.border = '1px solid #E8EAF2';
+    title.style.borderRadius = '16px';
+    title.style.padding = '20px 24px';
+    title.style.marginBottom = '16px';
+    title.style.boxShadow = '0 4px 16px rgba(26,29,46,0.08)';
+    const qrDataUrl = createShareQrDataUrl(currentDebateTicker || '');
+    title.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <div>
+                <div style="font-size:26px;font-weight:800;color:#1A1D2E;line-height:1.3;">大师擂台 · 股票辩论分享图</div>
+                <div style="margin-top:8px;font-size:14px;color:#5A607F;">标的：${currentDebateTicker || '-'} · 生成时间：${new Date().toLocaleString('zh-CN', { hour12: false })}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <img src="${qrDataUrl}" alt="分享二维码" style="width:72px;height:72px;border-radius:8px;border:1px solid #E8EAF2;">
+                <div style="font-size:12px;color:#5A607F;line-height:1.5;max-width:130px;">扫码打开大师擂台<br>查看更多实时辩论</div>
+            </div>
+        </div>
+    `;
+
+    const infoClone = stockInfoBar.cloneNode(true);
+    const debateClone = debateSection.cloneNode(true);
+    const summaryClone = summarySection.cloneNode(true);
+    infoClone.style.display = 'block';
+    debateClone.style.display = 'block';
+    summaryClone.style.display = summarySection.classList.contains('show') ? 'block' : 'none';
+
+    exportWrap.appendChild(title);
+    exportWrap.appendChild(infoClone);
+    exportWrap.appendChild(debateClone);
+    if (summarySection.classList.contains('show')) exportWrap.appendChild(summaryClone);
+
+    if (template === 'lite') {
+        const cardsAll = exportWrap.querySelectorAll('.master-card');
+        cardsAll.forEach((card, idx) => {
+            if (idx >= 6) card.remove();
+        });
+        const rebuttals = exportWrap.querySelectorAll('.rebuttal-box');
+        rebuttals.forEach((box) => box.remove());
+        const summaryBlocks = exportWrap.querySelectorAll('.summary-block');
+        summaryBlocks.forEach((block, idx) => {
+            if (idx > 0) block.remove();
+        });
+    }
+
+    if (ratio === 'social') {
+        const spacer = document.createElement('div');
+        spacer.style.height = '0';
+        exportWrap.appendChild(spacer);
+    }
+    document.body.appendChild(exportWrap);
+
+    const originalText = shareBtn.textContent;
+    shareBtn.disabled = true;
+    shareBtn.textContent = '⏳ 正在生成长图...';
+
+    try {
+        if (typeof html2canvas !== 'function') throw new Error('截图引擎未加载');
+        const canvas = await html2canvas(exportWrap, {
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#F7F8FC',
+            scale: Math.min(2, window.devicePixelRatio || 2),
+            imageTimeout: 12000,
+            logging: false,
+        });
+        if (ratio === 'social') {
+            const targetW = 1080;
+            const targetH = 1350;
+            const socialCanvas = document.createElement('canvas');
+            socialCanvas.width = targetW;
+            socialCanvas.height = targetH;
+            const sctx = socialCanvas.getContext('2d');
+            sctx.fillStyle = '#F7F8FC';
+            sctx.fillRect(0, 0, targetW, targetH);
+            const scaledH = Math.min(targetH, Math.round((canvas.height / canvas.width) * targetW));
+            sctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, targetW, scaledH);
+            const link = document.createElement('a');
+            link.href = socialCanvas.toDataURL('image/png');
+            link.download = buildShareFileName().replace('.png', '_4x5.png');
+            link.click();
+            return;
+        }
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = buildShareFileName();
+        link.click();
+    } catch (e) {
+        console.error('导出长图失败:', e);
+        showInputError('导出失败。可能是网络图片跨域限制，请稍后重试。');
+    } finally {
+        exportWrap.remove();
+        shareBtn.disabled = false;
+        shareBtn.textContent = originalText;
+    }
+}
+
 async function initApp() {
     const tickerInput = document.getElementById('tickerInput');
     tickerInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') startDebate(); });
