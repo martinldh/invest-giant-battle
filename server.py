@@ -625,6 +625,11 @@ class DebateRequest(BaseModel):
     ticker: str
 
 
+class MasterDebateRequest(BaseModel):
+    ticker: str
+    master_id: str
+
+
 def normalize_ticker(ticker: str) -> str:
     """Validate and normalize public ticker input."""
     normalized = ticker.strip().upper()
@@ -737,6 +742,21 @@ async def start_debate(request: DebateRequest):
                 save_debate_cache()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/api/debate/master")
+async def regenerate_master_opinion(request: MasterDebateRequest):
+    """Regenerate one master's opinion for the given ticker."""
+    ticker = normalize_ticker(request.ticker)
+    master_id = (request.master_id or "").strip().lower()
+    master = next((m for m in MASTERS if m["id"] == master_id), None)
+    if not master:
+        raise HTTPException(status_code=400, detail="大师ID无效")
+
+    stock_data = await fetch_stock_data(ticker)
+    prompt = build_debate_prompt(master, stock_data, MASTERS)
+    result = await generate_master_opinion(master, prompt)
+    return {"success": True, "data": result}
 
 
 async def generate_master_opinion(master: dict, prompt: str) -> dict:

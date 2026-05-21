@@ -364,6 +364,42 @@ body {
 .rebuttal-box.show { opacity: 1; }
 .rebuttal-box .rebuttal-speaker { font-weight: 700; color: var(--accent); }
 .rebuttal-box .rebuttal-target { font-weight: 600; color: var(--text-primary); }
+.card-retry {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-light);
+}
+.card-retry.show { display: flex; }
+.btn-card-retry {
+    border: 1px solid var(--accent);
+    background: var(--accent-light);
+    color: var(--accent-hover);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.btn-card-retry:hover:not(:disabled) {
+    background: #E0E7FF;
+    transform: translateY(-1px);
+}
+.btn-card-retry:disabled {
+    opacity: 0.65;
+    cursor: wait;
+    transform: none;
+}
+.card-retry-status {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+}
 
 /* Summary */
 .summary-section {

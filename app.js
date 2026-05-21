@@ -113,6 +113,9 @@ const DEBATE_DATA = {
 
 // ========== State ==========
 let isDebating = false;
+let currentDebateTicker = '';
+const PENDING_OPINION_TEXT = '观点生成中，请稍后刷新本条结果。';
+const MASTER_CARD_RUNTIME = new Map();
 
 const COMPANY_DIRECTORY = [
     { ticker: 'AAPL', name: 'Apple', aliases: ['apple', 'apple inc', '苹果'], logo: 'https://logo.clearbit.com/apple.com' },
@@ -565,6 +568,8 @@ async function startDebate() {
     const validation = validateInput(inputEl.value);
     if (!validation.valid) { showInputError(validation.msg); return; }
     const ticker = validation.ticker;
+    currentDebateTicker = ticker;
+    MASTER_CARD_RUNTIME.clear();
 
     if (!useBackend && !DEBATE_DATA[ticker]) {
         showInputError(`当前标的 ${ticker} 暂无数据。启动后端服务后可支持任意标的。`);
@@ -749,6 +754,12 @@ async function streamMasterCardFromBackend(entry, index) {
 
     const card = document.createElement('div');
     card.className = `master-card school-${master.school || entry.school}`;
+    const safeOpinionText = zeroToleranceStripJsonEnvelope(entry.opinion, 'opinion');
+    const safeRebuttalText = entry.rebuttal?.text
+        ? zeroToleranceStripJsonEnvelope(entry.rebuttal.text, 'rebuttal')
+        : '';
+    const hasPendingOpinion = safeOpinionText.includes(PENDING_OPINION_TEXT) || !!entry.error;
+
     card.innerHTML = `
         <div class="card-header">
             <div class="master-avatar"><img src="${master.photo || ''}" alt="${master.name}" onerror="this.parentElement.innerHTML='${(master.name || '?')[0]}'"></div>
@@ -759,23 +770,98 @@ async function streamMasterCardFromBackend(entry, index) {
             <span class="school-tag ${master.school || entry.school}">${schoolLabels[master.school || entry.school] || entry.school_label}</span>
         </div>
         <div class="card-body">
-            <div class="master-opinion" id="opinion-api-${index}"><span class="cursor-blink"></span></div>
-            ${entry.rebuttal ? `<div class="rebuttal-box" id="rebuttal-api-${index}"><span>💬</span> <span class="rebuttal-speaker">${master.name || entry.master_name}</span> 回应 <span class="rebuttal-target">${entry.rebuttal.target}</span>：${entry.rebuttal.text}</div>` : ''}
+            <div class="master-opinion"><span class="cursor-blink"></span></div>
+            ${entry.rebuttal ? `<div class="rebuttal-box"><span>💬</span> <span class="rebuttal-speaker">${master.name || entry.master_name}</span> 回应 <span class="rebuttal-target">${entry.rebuttal.target || ''}</span>：${safeRebuttalText}</div>` : ''}
+            <div class="card-retry ${hasPendingOpinion ? 'show' : ''}">
+                <button class="btn-card-retry" type="button">${hasPendingOpinion ? '重试本条' : ''}</button>
+                <span class="card-retry-status">${hasPendingOpinion ? '观点生成中，已尝试自动恢复' : ''}</span>
+            </div>
         </div>
     `;
     container.appendChild(card);
     await sleep(50);
     card.classList.add('visible');
 
-    const opinionEl = document.getElementById(`opinion-api-${index}`);
-    const safeOpinionText = zeroToleranceStripJsonEnvelope(entry.opinion, 'opinion');
+    const opinionEl = card.querySelector('.master-opinion');
     await streamText(opinionEl, safeOpinionText, 12);
 
-    if (entry.rebuttal) {
-        if (entry.rebuttal.text) {
-            entry.rebuttal.text = zeroToleranceStripJsonEnvelope(entry.rebuttal.text, 'rebuttal');
+    const rebuttalEl = card.querySelector('.rebuttal-box');
+    if (rebuttalEl) rebuttalEl.classList.add('show');
+
+    if (hasPendingOpinion && currentDebateTicker) {
+        const runtime = {
+            card,
+            masterId: entry.master_id,
+            ticker: currentDebateTicker,
+            retrying: false,
+            autoRetried: false,
+        };
+        MASTER_CARD_RUNTIME.set(`${entry.master_id}-${index}`, runtime);
+        const btn = card.querySelector('.btn-card-retry');
+        if (btn) {
+            btn.addEventListener('click', () => retryMasterCard(runtime, true));
         }
-        document.getElementById(`rebuttal-api-${index}`).classList.add('show');
+        setTimeout(() => {
+            if (!runtime.autoRetried) retryMasterCard(runtime, false);
+        }, 7000);
+    }
+}
+
+function setCardRetryUI(card, stateText = '', loading = false, show = true) {
+    const box = card.querySelector('.card-retry');
+    const btn = card.querySelector('.btn-card-retry');
+    const status = card.querySelector('.card-retry-status');
+    if (!box || !btn || !status) return;
+    box.classList.toggle('show', show);
+    btn.disabled = loading;
+    btn.textContent = loading ? '重试中...' : '重试本条';
+    status.textContent = stateText;
+}
+
+async function retryMasterCard(runtime, manual) {
+    if (!runtime || runtime.retrying) return;
+    runtime.retrying = true;
+    runtime.autoRetried = true;
+    setCardRetryUI(runtime.card, manual ? '正在重新生成这位大师的观点...' : '系统自动重试中...', true, true);
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/debate/master`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker: runtime.ticker, master_id: runtime.masterId }),
+        });
+        if (!resp.ok) throw new Error('重试请求失败');
+        const result = await resp.json();
+        if (!result?.success || !result?.data) throw new Error('重试结果无效');
+
+        const next = sanitizeDisplayLayerEntry(normalizeBackendEntry(result.data));
+        const safeOpinionText = zeroToleranceStripJsonEnvelope(next.opinion, 'opinion');
+        const stillPending = safeOpinionText.includes(PENDING_OPINION_TEXT) || !!next.error;
+
+        const opinionEl = runtime.card.querySelector('.master-opinion');
+        if (opinionEl) await streamText(opinionEl, safeOpinionText, 8);
+
+        const oldRebuttal = runtime.card.querySelector('.rebuttal-box');
+        if (oldRebuttal) oldRebuttal.remove();
+        if (next.rebuttal?.text) {
+            const body = runtime.card.querySelector('.card-body');
+            const safeRebuttalText = zeroToleranceStripJsonEnvelope(next.rebuttal.text, 'rebuttal');
+            const rebuttalEl = document.createElement('div');
+            rebuttalEl.className = 'rebuttal-box show';
+            const masterName = runtime.card.querySelector('.master-name')?.textContent || '';
+            rebuttalEl.innerHTML = `<span>💬</span> <span class="rebuttal-speaker">${masterName}</span> 回应 <span class="rebuttal-target">${next.rebuttal.target || ''}</span>：${safeRebuttalText}`;
+            body.insertBefore(rebuttalEl, body.querySelector('.card-retry'));
+        }
+
+        if (stillPending) {
+            setCardRetryUI(runtime.card, '本条仍在生成中，请稍后手动再试', false, true);
+        } else {
+            setCardRetryUI(runtime.card, '', false, false);
+        }
+    } catch (_) {
+        setCardRetryUI(runtime.card, '重试失败，请稍后再试', false, true);
+    } finally {
+        runtime.retrying = false;
     }
 }
 
@@ -1000,6 +1086,8 @@ function resetAll() {
     document.getElementById('cardsBearish').innerHTML = '';
     document.getElementById('cardsNeutral').innerHTML = '';
     document.getElementById('loadingText').innerHTML = '大师们正在激烈辩论中<span class="loading-dots"></span>';
+    MASTER_CARD_RUNTIME.clear();
+    currentDebateTicker = '';
     document.getElementById('tickerInput').focus();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
