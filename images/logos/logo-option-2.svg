@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="大师擂台 Logo 方案2">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="sword" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg2)"/>
+  <path d="M20 44 L44 20" stroke="url(#sword)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M44 20 L42 28 L36 22 Z" fill="#C4B5FD"/>
+  <rect x="22" y="42" width="12" height="4" rx="2" fill="#E5E7EB"/>
+  <path d="M10 45 H54" stroke="#334155" stroke-width="2"/>
+  <rect x="13" y="39" width="4" height="6" fill="#22C55E"/>
+  <rect x="19" y="35" width="4" height="10" fill="#22C55E"/>
+  <rect x="25" y="31" width="4" height="14" fill="#22C55E"/>
+</svg>

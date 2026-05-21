@@ -1115,7 +1115,7 @@ function buildShareFileName() {
     return `invest-giant-battle_${ticker}_${stamp}.png`;
 }
 
-function createShareQrDataUrl(text) {
+function createShareQrPlaceholderDataUrl(text) {
     const size = 120;
     const c = document.createElement('canvas');
     c.width = size;
@@ -1134,6 +1134,25 @@ function createShareQrDataUrl(text) {
     const short = String(text || '').slice(0, 14).toUpperCase();
     ctx.fillText(short || 'TICKER', size / 2, size / 2 + 8);
     return c.toDataURL('image/png');
+}
+
+async function createShareQrDataUrl() {
+    const targetUrl = window.location.href.split('#')[0];
+    const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=144x144&margin=2&data=${encodeURIComponent(targetUrl)}`;
+    try {
+        const resp = await fetch(qrApiUrl, { mode: 'cors' });
+        if (!resp.ok) throw new Error(`QR API ${resp.status}`);
+        const blob = await resp.blob();
+        return await new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result);
+            fr.onerror = () => reject(new Error('二维码转码失败'));
+            fr.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.warn('二维码生成失败，使用占位图:', e);
+        return createShareQrPlaceholderDataUrl(currentDebateTicker || '');
+    }
 }
 
 async function exportDebateAsPng() {
@@ -1169,7 +1188,7 @@ async function exportDebateAsPng() {
     title.style.padding = '20px 24px';
     title.style.marginBottom = '16px';
     title.style.boxShadow = '0 4px 16px rgba(26,29,46,0.08)';
-    const qrDataUrl = createShareQrDataUrl(currentDebateTicker || '');
+    const qrDataUrl = await createShareQrDataUrl();
     title.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
             <div>
