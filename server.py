@@ -189,6 +189,7 @@ async def fetch_stock_data_uncached(ticker: str) -> dict:
     """Fetch real-time stock data with multi-provider fallback support."""
     provider = STOCK_DATA_PROVIDER.lower()
     last_error = None
+    provider_errors: list[str] = []
 
     provider_chain: list[tuple[str, callable, bool]] = [
         ("twelvedata", fetch_twelve_data, True),
@@ -210,10 +211,14 @@ async def fetch_stock_data_uncached(ticker: str) -> dict:
                 return await fn(ticker, provider_symbol)
             except Exception as e:
                 last_error = e
+                provider_errors.append(f"{name}:{provider_symbol}:{str(e)}")
                 logger.warning(f"{name} failed for {ticker} via {provider_symbol}: {e}, trying next symbol/provider")
 
     logger.warning(f"All providers failed for {ticker}: {last_error}, using fallback data")
-    return get_fallback_stock_data(ticker)
+    data = get_fallback_stock_data(ticker)
+    if provider_errors:
+        data["fallback_reason"] = " | ".join(provider_errors[-6:])
+    return data
 
 
 def to_provider_symbols(ticker: str, provider: str) -> list[str]:
