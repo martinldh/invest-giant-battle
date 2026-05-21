@@ -130,6 +130,7 @@ const COMPANY_DIRECTORY = [
     { ticker: 'NFLX', name: 'Netflix', aliases: ['netflix', '奈飞'], logo: 'https://logo.clearbit.com/netflix.com' },
     { ticker: '0700:HKEX', name: 'Tencent', aliases: ['0700', '0700.hk', '0700:hkex', 'tencent', '腾讯'], logo: 'https://logo.clearbit.com/tencent.com' },
     { ticker: '9988:HKEX', name: 'Alibaba', aliases: ['9988', '9988.hk', '9988:hkex', 'alibaba hk', '阿里巴巴'], logo: 'https://logo.clearbit.com/alibabagroup.com' },
+    { ticker: '09992:HKEX', name: 'Pop Mart', aliases: ['09992', '9992', '09992.hk', '9992.hk', '09992:hkex', '9992:hkex', 'pop mart', 'popmart', '泡泡玛特'], logo: 'https://logo.clearbit.com/popmart.com' },
 ];
 
 // ========== Functions ==========
