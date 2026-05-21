@@ -441,6 +441,19 @@ function normalizeTickerInputValue(inputEl) {
     if (cleaned !== inputEl.value) inputEl.value = cleaned;
 }
 
+function resolveDisplayStockName(data) {
+    const rawName = String(data?.name || '').trim();
+    const ticker = String(data?.ticker || '').toUpperCase().trim();
+    const company = COMPANY_DIRECTORY.find(c => c.ticker === ticker);
+    if (!company) return rawName;
+    const looksLikePlaceholder = !rawName || /corporation$/i.test(rawName);
+    if (looksLikePlaceholder) {
+        const cnAlias = company.aliases.find(alias => /[\u4e00-\u9fff]/.test(alias));
+        return cnAlias || company.name;
+    }
+    return rawName;
+}
+
 // ========== Stock Data via Backend API ==========
 async function fetchStockData(ticker) {
     const bar = document.getElementById('stockInfoBar');
@@ -460,6 +473,7 @@ async function fetchStockData(ticker) {
         const arrow = isUp ? '▲' : '▼';
         const mUp = data.month_change_pct >= 0;
         const yUp = data.year_change_pct >= 0;
+        const displayName = resolveDisplayStockName(data);
 
         content.innerHTML = `
             <div class="stock-info-top">
@@ -467,7 +481,7 @@ async function fetchStockData(ticker) {
                     ${buildStockLogoImg(data)}
                     <div>
                         <span class="stock-ticker">${data.ticker}</span>
-                        <span class="stock-name">${data.name || ''}</span>
+                        <span class="stock-name">${displayName}</span>
                     </div>
                 </div>
                 <div style="text-align:right">

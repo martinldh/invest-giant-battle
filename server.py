@@ -203,7 +203,8 @@ async def fetch_stock_data_uncached(ticker: str) -> dict:
             logger.info(f"Skip provider {name} for {ticker}: missing API key")
             continue
         try:
-            return await fn(ticker)
+            provider_symbol = to_provider_symbol(ticker, name)
+            return await fn(ticker, provider_symbol)
         except Exception as e:
             last_error = e
             logger.warning(f"{name} failed for {ticker}: {e}, trying next provider")
@@ -212,11 +213,34 @@ async def fetch_stock_data_uncached(ticker: str) -> dict:
     return get_fallback_stock_data(ticker)
 
 
-async def fetch_twelve_data(ticker: str) -> dict:
+def to_provider_symbol(ticker: str, provider: str) -> str:
+    """Convert internal ticker format to provider-specific symbol format."""
+    normalized = ticker.strip().upper()
+    hk_match = re.fullmatch(r"(\d{4,5}):(HKEX|XHKG)", normalized)
+    if not hk_match:
+        return normalized
+
+    hk_code = hk_match.group(1)
+    if provider in {"twelvedata", "yahoo", "alphavantage", "finnhub"}:
+        return f"{hk_code}.HK"
+    return normalized
+
+
+def get_company_name_fallback(ticker: str) -> str:
+    hk_name_map = {
+        "0700:HKEX": "Tencent Holdings Ltd",
+        "9988:HKEX": "Alibaba Group Holding Ltd",
+        "09992:HKEX": "Pop Mart International Group Ltd",
+    }
+    normalized = ticker.strip().upper()
+    return hk_name_map.get(normalized, f"{normalized} Corporation")
+
+
+async def fetch_twelve_data(ticker: str, provider_symbol: str) -> dict:
     """Fetch stock data from Twelve Data API (free tier: 800 requests/day)."""
     async with httpx.AsyncClient(timeout=15.0) as client:
         # Get current quote
-        quote_url = f"https://api.twelvedata.com/quote?symbol={ticker}&apikey={TWELVE_DATA_API_KEY}"
+        quote_url = f"https://api.twelvedata.com/quote?symbol={provider_symbol}&apikey={TWELVE_DATA_API_KEY}"
         resp = await client.get(quote_url)
         resp.raise_for_status()
         quote = resp.json()
@@ -225,7 +249,7 @@ async def fetch_twelve_data(ticker: str) -> dict:
             raise Exception(f"Twelve Data error: {quote.get('message', 'Unknown error')}")
         
         if not quote.get("close"):
-            raise Exception(f"Twelve Data: No data for {ticker}")
+            raise Exception(f"Twelve Data: No data for {provider_symbol}")
         
         current_price = float(quote["close"])
         prev_close = float(quote.get("previous_close", current_price))
@@ -234,7 +258,7 @@ async def fetch_twelve_data(ticker: str) -> dict:
         volume = int(quote.get("volume", 0))
         
         # Get time series for historical data
-        ts_url = f"https://api.twelvedata.com/time_series?symbol={ticker}&interval=1day&outputsize=260&apikey={TWELVE_DATA_API_KEY}"
+        ts_url = f"https://api.twelvedata.com/time_series?symbol={provider_symbol}&interval=1day&outputsize=260&apikey={TWELVE_DATA_API_KEY}"
         resp = await client.get(ts_url)
         resp.raise_for_status()
         ts_data = resp.json()
@@ -252,7 +276,7 @@ async def fetch_twelve_data(ticker: str) -> dict:
         
         return {
             "ticker": ticker.upper(),
-            "name": quote.get("name", f"{ticker} Corporation"),
+            "name": quote.get("name", get_company_name_fallback(ticker)),
             "exchange": quote.get("exchange", "US Market"),
             "currency": quote.get("currency", "USD"),
             "logo": COMPANY_LOGOS.get(ticker.upper(), ""),
@@ -276,12 +300,12 @@ async def fetch_twelve_data(ticker: str) -> dict:
         }
 
 
-async def fetch_yahoo_finance(ticker: str) -> dict:
+async def fetch_yahoo_finance(ticker: str, provider_symbol: str) -> dict:
     """Fetch stock data from Yahoo Finance API."""
     urls = [
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d",
-        f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d",
-        f"https://query1.finance.yahoo.com/v10/finance/chart/{ticker}?range=1y&interval=1d",
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{provider_symbol}?range=1y&interval=1d",
+        f"https://query2.finance.yahoo.com/v8/finance/chart/{provider_symbol}?range=1y&interval=1d",
+        f"https://query1.finance.yahoo.com/v10/finance/chart/{provider_symbol}?range=1y&interval=1d",
     ]
     
     last_error = None
@@ -312,7 +336,7 @@ async def fetch_yahoo_finance(ticker: str) -> dict:
                 data = resp.json()
                 
                 if not data.get("chart", {}).get("result"):
-                    last_error = f"No data found for ticker: {ticker}"
+                    last_error = f"No data found for ticker: {provider_symbol}"
                     continue
                     
                 result = data["chart"]["result"][0]
@@ -329,7 +353,7 @@ async def fetch_yahoo_finance(ticker: str) -> dict:
                 
                 return {
                     "ticker": ticker,
-                    "name": meta.get("shortName", ""),
+                    "name": meta.get("shortName", get_company_name_fallback(ticker)),
                     "exchange": meta.get("fullExchangeName", ""),
                     "currency": meta.get("currency", "USD"),
                     "logo": COMPANY_LOGOS.get(ticker.upper(), ""),
@@ -362,24 +386,24 @@ async def fetch_yahoo_finance(ticker: str) -> dict:
     raise Exception(f"Yahoo Finance failed: {last_error}")
 
 
-async def fetch_alphavantage(ticker: str) -> dict:
+async def fetch_alphavantage(ticker: str, provider_symbol: str) -> dict:
     """Fetch stock data from Alpha Vantage API (free tier: 25 requests/day)."""
     async with httpx.AsyncClient(timeout=15.0) as client:
         # Get quote endpoint for current price
-        quote_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={ALPHA_VANTAGE_API_KEY}"
+        quote_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={provider_symbol}&apikey={ALPHA_VANTAGE_API_KEY}"
         resp = await client.get(quote_url)
         resp.raise_for_status()
         quote_data = resp.json()
         
         if "Global Quote" not in quote_data or not quote_data["Global Quote"]:
-            raise Exception(f"Alpha Vantage: No data for {ticker}")
+            raise Exception(f"Alpha Vantage: No data for {provider_symbol}")
         
         quote = quote_data["Global Quote"]
         current_price = float(quote.get("05. price", 0))
         prev_close = float(quote.get("08. previous close", current_price))
         
         # Get daily data for historical prices
-        daily_url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
+        daily_url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={provider_symbol}&outputsize=compact&apikey={ALPHA_VANTAGE_API_KEY}"
         resp = await client.get(daily_url)
         resp.raise_for_status()
         daily_data = resp.json()
@@ -404,7 +428,7 @@ async def fetch_alphavantage(ticker: str) -> dict:
         
         return {
             "ticker": ticker,
-            "name": f"{ticker} Corporation",
+            "name": get_company_name_fallback(ticker),
             "exchange": "US Market",
             "currency": "USD",
             "current_price": round(current_price, 2),
@@ -427,17 +451,17 @@ async def fetch_alphavantage(ticker: str) -> dict:
         }
 
 
-async def fetch_finnhub(ticker: str) -> dict:
+async def fetch_finnhub(ticker: str, provider_symbol: str) -> dict:
     """Fetch stock data from Finnhub API (free tier: 60 requests/minute)."""
     async with httpx.AsyncClient(timeout=15.0) as client:
         # Get current quote
-        quote_url = f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={FINNHUB_API_KEY}"
+        quote_url = f"https://finnhub.io/api/v1/quote?symbol={provider_symbol}&token={FINNHUB_API_KEY}"
         resp = await client.get(quote_url)
         resp.raise_for_status()
         quote = resp.json()
         
         if not quote or quote.get("c") == 0:
-            raise Exception(f"Finnhub: No data for {ticker}")
+            raise Exception(f"Finnhub: No data for {provider_symbol}")
         
         current_price = quote.get("c", 0)
         prev_close = quote.get("pc", current_price)
@@ -447,7 +471,7 @@ async def fetch_finnhub(ticker: str) -> dict:
         # Get candle data for historical prices
         end_time = int(datetime.now().timestamp())
         start_time = end_time - (365 * 24 * 60 * 60)  # 1 year ago
-        candle_url = f"https://finnhub.io/api/v1/stock/candle?symbol={ticker}&resolution=D&from={start_time}&to={end_time}&token={FINNHUB_API_KEY}"
+        candle_url = f"https://finnhub.io/api/v1/stock/candle?symbol={provider_symbol}&resolution=D&from={start_time}&to={end_time}&token={FINNHUB_API_KEY}"
         resp = await client.get(candle_url)
         resp.raise_for_status()
         candle = resp.json()
@@ -461,7 +485,7 @@ async def fetch_finnhub(ticker: str) -> dict:
         
         return {
             "ticker": ticker,
-            "name": f"{ticker} Corporation",
+            "name": get_company_name_fallback(ticker),
             "exchange": "US Market",
             "currency": "USD",
             "current_price": round(current_price, 2),
