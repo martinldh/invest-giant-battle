@@ -179,7 +179,9 @@ async def fetch_stock_data(ticker: str) -> dict:
 
     data = await fetch_stock_data_uncached(normalized)
     data["cache_status"] = "miss"
-    STOCK_CACHE[normalized] = (now, dict(data))
+    # Do not cache fallback snapshots; retry providers on next request.
+    if not data.get("is_fallback"):
+        STOCK_CACHE[normalized] = (now, dict(data))
     return data
 
 
@@ -202,28 +204,34 @@ async def fetch_stock_data_uncached(ticker: str) -> dict:
         if not enabled:
             logger.info(f"Skip provider {name} for {ticker}: missing API key")
             continue
-        try:
-            provider_symbol = to_provider_symbol(ticker, name)
-            return await fn(ticker, provider_symbol)
-        except Exception as e:
-            last_error = e
-            logger.warning(f"{name} failed for {ticker}: {e}, trying next provider")
+        provider_symbols = to_provider_symbols(ticker, name)
+        for provider_symbol in provider_symbols:
+            try:
+                return await fn(ticker, provider_symbol)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"{name} failed for {ticker} via {provider_symbol}: {e}, trying next symbol/provider")
 
     logger.warning(f"All providers failed for {ticker}: {last_error}, using fallback data")
     return get_fallback_stock_data(ticker)
 
 
-def to_provider_symbol(ticker: str, provider: str) -> str:
-    """Convert internal ticker format to provider-specific symbol format."""
+def to_provider_symbols(ticker: str, provider: str) -> list[str]:
+    """Convert internal ticker format to provider-specific symbol candidates."""
     normalized = ticker.strip().upper()
     hk_match = re.fullmatch(r"(\d{4,5}):(HKEX|XHKG)", normalized)
     if not hk_match:
-        return normalized
+        return [normalized]
 
     hk_code = hk_match.group(1)
+    hk_code_4 = hk_code.lstrip("0") or "0"
     if provider in {"twelvedata", "yahoo", "alphavantage", "finnhub"}:
-        return f"{hk_code}.HK"
-    return normalized
+        # Some providers accept 09992.HK, others prefer 9992.HK.
+        symbols: list[str] = [f"{hk_code}.HK"]
+        if hk_code_4 != hk_code:
+            symbols.append(f"{hk_code_4}.HK")
+        return symbols
+    return [normalized]
 
 
 def get_company_name_fallback(ticker: str) -> str:
