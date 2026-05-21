@@ -230,7 +230,10 @@ def to_provider_symbols(ticker: str, provider: str) -> list[str]:
 
     hk_code = hk_match.group(1)
     hk_code_4 = hk_code.lstrip("0") or "0"
-    if provider in {"twelvedata", "yahoo", "alphavantage", "finnhub"}:
+    if provider == "twelvedata":
+        # Twelve Data HKEX official format: 0700:HKEX
+        return [f"{hk_code}:HKEX"]
+    if provider in {"yahoo", "alphavantage", "finnhub"}:
         # Some providers accept 09992.HK, others prefer 9992.HK.
         symbols: list[str] = [f"{hk_code}.HK"]
         if hk_code_4 != hk_code:
