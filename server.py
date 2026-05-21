@@ -524,11 +524,13 @@ def get_fallback_stock_data(ticker: str) -> dict:
     day_change = round(current_price - prev_close, 2)
     day_change_pct = round(day_change / prev_close * 100, 2) if prev_close else 0
     
+    normalized = ticker.upper()
+    is_hk = bool(re.fullmatch(r"\d{4,5}:(HKEX|XHKG)", normalized))
     return {
-        "ticker": ticker.upper(),
-        "name": f"{ticker.upper()} Corporation",
-        "exchange": "NASDAQ",
-        "currency": "USD",
+        "ticker": normalized,
+        "name": get_company_name_fallback(normalized),
+        "exchange": "HKEX" if is_hk else "NASDAQ",
+        "currency": "HKD" if is_hk else "USD",
         "current_price": current_price,
         "prev_close": prev_close,
         "day_change": day_change,
