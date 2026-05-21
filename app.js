@@ -255,8 +255,9 @@ function extractDisplayTextFromJsonLike(rawText, preferredKey) {
 
 function extractFieldByKeyHeuristic(rawText, key, nextKeys = []) {
     if (typeof rawText !== 'string') return null;
-    const src = rawText.replace(/<br\s*\/?>/gi, '\n');
-    const keyRegex = new RegExp(`["']${key}["']\\s*:\\s*`, 'i');
+    const src = decodePotentialHtmlEntities(rawText).replace(/<br\s*\/?>/gi, '\n');
+    const q = '(?:"|\'|&quot;)';
+    const keyRegex = new RegExp(`${q}${key}${q}\\s*:\\s*`, 'i');
     const match = keyRegex.exec(src);
     if (!match) return null;
 
@@ -267,7 +268,7 @@ function extractFieldByKeyHeuristic(rawText, key, nextKeys = []) {
 
     let end = src.length;
     for (const nextKey of nextKeys) {
-        const nextRegex = new RegExp(`,\\s*["']${nextKey}["']\\s*:`, 'ig');
+        const nextRegex = new RegExp(`,\\s*${q}${nextKey}${q}\\s*:`, 'ig');
         nextRegex.lastIndex = start;
         const nextMatch = nextRegex.exec(src);
         if (nextMatch) end = Math.min(end, nextMatch.index);
@@ -283,10 +284,19 @@ function extractFieldByKeyHeuristic(rawText, key, nextKeys = []) {
     return value || null;
 }
 
+function decodePotentialHtmlEntities(value) {
+    if (typeof value !== 'string') return '';
+    if (!/[&][a-z#0-9]+;|&#\d+;|&#x[a-f0-9]+;/i.test(value)) return value;
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = value;
+    return textarea.value;
+}
+
 function sanitizeDisplayLayerEntry(entry) {
     const next = { ...entry };
     next.opinion = extractDisplayTextFromJsonLike(next.opinion, 'opinion');
-    if (typeof next.opinion === 'string' && /^\s*\{[\s\S]*["']opinion["']\s*:/.test(next.opinion)) {
+    const decodedOpinion = decodePotentialHtmlEntities(next.opinion);
+    if (typeof decodedOpinion === 'string' && /^\s*\{[\s\S]*(["']|&quot;)opinion(["']|&quot;)\s*:/.test(decodedOpinion)) {
         const extractedOpinion = extractFieldByKeyHeuristic(next.opinion, 'opinion', ['rebuttal_target', 'rebuttal', 'stance']);
         if (extractedOpinion) next.opinion = extractedOpinion;
     }
@@ -295,19 +305,23 @@ function sanitizeDisplayLayerEntry(entry) {
             ...next.rebuttal,
             text: extractDisplayTextFromJsonLike(next.rebuttal.text, 'rebuttal'),
         };
-        if (typeof next.rebuttal.text === 'string' && /^\s*\{[\s\S]*["']rebuttal["']\s*:/.test(next.rebuttal.text)) {
+        const decodedRebuttal = decodePotentialHtmlEntities(next.rebuttal.text);
+        if (typeof decodedRebuttal === 'string' && /^\s*\{[\s\S]*(["']|&quot;)rebuttal(["']|&quot;)\s*:/.test(decodedRebuttal)) {
             const extractedRebuttal = extractFieldByKeyHeuristic(next.rebuttal.text, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
             if (extractedRebuttal) next.rebuttal.text = extractedRebuttal;
         }
     }
 
-    if (typeof next.opinion === 'string' && /^\s*\{[\s\S]*["'](stance|opinion|rebuttal_target|rebuttal)["']\s*:/.test(next.opinion)) {
+    if (typeof decodedOpinion === 'string' && /^\s*\{[\s\S]*(["']|&quot;)(stance|opinion|rebuttal_target|rebuttal)(["']|&quot;)\s*:/.test(decodedOpinion)) {
         const forceOpinion = extractFieldByKeyHeuristic(next.opinion, 'opinion', ['rebuttal_target', 'rebuttal', 'stance']);
         next.opinion = forceOpinion || '观点生成中，请稍后刷新本条结果。';
     }
-    if (next.rebuttal && typeof next.rebuttal.text === 'string' && /^\s*\{[\s\S]*["'](stance|opinion|rebuttal_target|rebuttal)["']\s*:/.test(next.rebuttal.text)) {
-        const forceRebuttal = extractFieldByKeyHeuristic(next.rebuttal.text, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
-        next.rebuttal.text = forceRebuttal || '';
+    if (next.rebuttal && typeof next.rebuttal.text === 'string') {
+        const decodedRebuttal = decodePotentialHtmlEntities(next.rebuttal.text);
+        if (/^\s*\{[\s\S]*(["']|&quot;)(stance|opinion|rebuttal_target|rebuttal)(["']|&quot;)\s*:/.test(decodedRebuttal)) {
+            const forceRebuttal = extractFieldByKeyHeuristic(next.rebuttal.text, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
+            next.rebuttal.text = forceRebuttal || '';
+        }
     }
 
     return next;
@@ -316,12 +330,13 @@ function sanitizeDisplayLayerEntry(entry) {
 function zeroToleranceStripJsonEnvelope(text, preferredKey = 'opinion') {
     if (typeof text !== 'string') return '';
     const raw = text.trim();
-    const looksLikeEnvelope = /^\s*\{[\s\S]*["'](stance|opinion|rebuttal_target|rebuttal)["']\s*:/.test(raw);
+    const decoded = decodePotentialHtmlEntities(raw);
+    const looksLikeEnvelope = /^\s*\{[\s\S]*(["']|&quot;)(stance|opinion|rebuttal_target|rebuttal)(["']|&quot;)\s*:/.test(decoded);
     if (!looksLikeEnvelope) return text;
 
-    const extracted = extractFieldByKeyHeuristic(raw, preferredKey, ['rebuttal_target', 'rebuttal', 'stance'])
-        || extractFieldByKeyHeuristic(raw, 'opinion', ['rebuttal_target', 'rebuttal', 'stance'])
-        || extractFieldByKeyHeuristic(raw, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
+    const extracted = extractFieldByKeyHeuristic(decoded, preferredKey, ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(decoded, 'opinion', ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(decoded, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
     return extracted || '观点生成中，请稍后刷新本条结果。';
 }
 
