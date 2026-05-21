@@ -457,6 +457,9 @@ async function fetchStockData(ticker) {
 
 // ========== Configuration ==========
 const PROD_API_BASE = 'https://invest-giant-battle.onrender.com';
+const HEALTHCHECK_TIMEOUT_MS = 12000;
+const HEALTHCHECK_RETRIES = 3;
+const HEALTHCHECK_RETRY_DELAY_MS = 1500;
 const API_BASE = (() => {
     const override = window.__API_BASE__ || document.documentElement?.dataset?.apiBase;
     if (override) return String(override).replace(/\/+$/, '');
@@ -470,17 +473,24 @@ let useBackend = false;
 // ========== Backend API ==========
 async function checkBackend() {
     const statusEl = document.getElementById('backendStatus');
-    try {
-        const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
-        if (resp.ok) {
-            useBackend = true;
-            console.log('✅ 后端服务已连接');
-            if (statusEl) statusEl.innerHTML = '· <span style="color:var(--bullish)">✅ 后端已连接（AI动态评论模式）</span>';
-            return true;
+    for (let attempt = 1; attempt <= HEALTHCHECK_RETRIES; attempt++) {
+        try {
+            const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(HEALTHCHECK_TIMEOUT_MS) });
+            if (resp.ok) {
+                useBackend = true;
+                console.log('✅ 后端服务已连接');
+                if (statusEl) statusEl.innerHTML = '· <span style="color:var(--bullish)">✅ 后端已连接（AI动态评论模式）</span>';
+                return true;
+            }
+        } catch (e) {
+            if (attempt < HEALTHCHECK_RETRIES) {
+                if (statusEl) statusEl.innerHTML = `· <span style="color:var(--neutral)">⏳ 正在唤醒后端服务...（${attempt}/${HEALTHCHECK_RETRIES}）</span>`;
+                await sleep(HEALTHCHECK_RETRY_DELAY_MS);
+                continue;
+            }
         }
-    } catch (e) {
-        console.log('⚠️ 后端服务未启动，使用静态数据模式');
     }
+    console.log('⚠️ 后端服务未启动，使用静态数据模式');
     useBackend = false;
     if (statusEl) statusEl.innerHTML = '· <span style="color:var(--neutral)">⚠️ 后端未启动（静态演示模式）</span>';
     return false;
