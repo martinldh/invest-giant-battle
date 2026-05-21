@@ -292,6 +292,43 @@ function decodePotentialHtmlEntities(value) {
     return textarea.value;
 }
 
+function stripHtmlTags(text) {
+    if (typeof text !== 'string') return '';
+    return text.replace(/<[^>]+>/g, '');
+}
+
+function extractQuotedValueAfterKey(source, key) {
+    if (typeof source !== 'string') return null;
+    const q = /["']/.source;
+    const keyRegex = new RegExp(`${q}${key}${q}\\s*:\\s*`, 'i');
+    const match = keyRegex.exec(source);
+    if (!match) return null;
+
+    let i = match.index + match[0].length;
+    while (i < source.length && /\s/.test(source[i])) i++;
+    const quote = source[i];
+    if (quote !== '"' && quote !== "'") return null;
+    i += 1;
+
+    let out = '';
+    let escaped = false;
+    for (; i < source.length; i++) {
+        const ch = source[i];
+        if (escaped) {
+            out += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\') {
+            escaped = true;
+            continue;
+        }
+        if (ch === quote) break;
+        out += ch;
+    }
+    return out.trim() || null;
+}
+
 function sanitizeDisplayLayerEntry(entry) {
     const next = { ...entry };
     next.opinion = extractDisplayTextFromJsonLike(next.opinion, 'opinion');
@@ -331,12 +368,17 @@ function zeroToleranceStripJsonEnvelope(text, preferredKey = 'opinion') {
     if (typeof text !== 'string') return '';
     const raw = text.trim();
     const decoded = decodePotentialHtmlEntities(raw);
+    const plain = stripHtmlTags(decoded);
     const looksLikeEnvelope = /^\s*\{[\s\S]*(["']|&quot;)(stance|opinion|rebuttal_target|rebuttal)(["']|&quot;)\s*:/.test(decoded);
-    if (!looksLikeEnvelope) return text;
+    const looksLikeEnvelopePlain = /^\s*\{[\s\S]*["'](stance|opinion|rebuttal_target|rebuttal)["']\s*:/.test(plain);
+    if (!looksLikeEnvelope && !looksLikeEnvelopePlain) return text;
 
-    const extracted = extractFieldByKeyHeuristic(decoded, preferredKey, ['rebuttal_target', 'rebuttal', 'stance'])
-        || extractFieldByKeyHeuristic(decoded, 'opinion', ['rebuttal_target', 'rebuttal', 'stance'])
-        || extractFieldByKeyHeuristic(decoded, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
+    const extracted = extractQuotedValueAfterKey(plain, preferredKey)
+        || extractQuotedValueAfterKey(plain, 'opinion')
+        || extractQuotedValueAfterKey(plain, 'rebuttal')
+        || extractFieldByKeyHeuristic(plain, preferredKey, ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(plain, 'opinion', ['rebuttal_target', 'rebuttal', 'stance'])
+        || extractFieldByKeyHeuristic(plain, 'rebuttal', ['stance', 'opinion', 'rebuttal_target']);
     return extracted || '观点生成中，请稍后刷新本条结果。';
 }
 
